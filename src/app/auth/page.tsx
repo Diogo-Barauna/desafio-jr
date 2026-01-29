@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,9 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { loginSchema, registerSchema, LoginFormData, RegisterFormData } from "@/lib/validations/auth";
+import { authClient } from "@/lib/auth-client";
 
 export default function AuthPage() {
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState("login");
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const loginForm = useForm<LoginFormData>({
         resolver: zodResolver(loginSchema),
@@ -31,14 +36,51 @@ export default function AuthPage() {
         },
     });
 
-    const onLogin = (data: LoginFormData) => {
-        console.log("Login:", data);
-        // TODO: Implement login logic
+    const onLogin = async (data: LoginFormData) => {
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const result = await authClient.signIn.email({
+                email: data.email,
+                password: data.password,
+            });
+
+            if (result.error) {
+                setError(result.error.message || "Erro ao fazer login");
+                return;
+            }
+
+            window.location.href = "/dashboard";
+        } catch {
+            setError("Erro ao fazer login. Tente novamente.");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const onRegister = (data: RegisterFormData) => {
-        console.log("Register:", data);
-        // TODO: Implement register logic
+    const onRegister = async (data: RegisterFormData) => {
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const result = await authClient.signUp.email({
+                email: data.email,
+                password: data.password,
+                name: data.name,
+            });
+
+            if (result.error) {
+                setError(result.error.message || "Erro ao criar conta");
+                return;
+            }
+
+            window.location.href = "/dashboard";
+        } catch {
+            setError("Erro ao criar conta. Tente novamente.");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -103,7 +145,7 @@ export default function AuthPage() {
                         </svg>
                     </div>
                     <CardTitle className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 dark:from-amber-400 dark:to-orange-400 bg-clip-text text-transparent">
-                        PetShop
+                        InteraTo PetShop
                     </CardTitle>
                     <CardDescription className="text-muted-foreground">
                         Cuide do seu melhor amigo com carinho
@@ -111,6 +153,12 @@ export default function AuthPage() {
                 </CardHeader>
 
                 <CardContent className="pt-4">
+                    {error && (
+                        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg text-red-700 dark:text-red-300 text-sm">
+                            {error}
+                        </div>
+                    )}
+
                     <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                         <TabsList className="grid w-full grid-cols-2 mb-6 bg-amber-100/50 dark:bg-zinc-800/50">
                             <TabsTrigger
@@ -137,6 +185,7 @@ export default function AuthPage() {
                                         type="email"
                                         placeholder="seu@email.com"
                                         {...loginForm.register("email")}
+                                        disabled={isLoading}
                                         className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50 focus:border-amber-500 focus:ring-amber-500/20"
                                     />
                                     {loginForm.formState.errors.email && (
@@ -151,6 +200,7 @@ export default function AuthPage() {
                                         type="password"
                                         placeholder="••••••••"
                                         {...loginForm.register("password")}
+                                        disabled={isLoading}
                                         className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50 focus:border-amber-500 focus:ring-amber-500/20"
                                     />
                                     {loginForm.formState.errors.password && (
@@ -160,9 +210,10 @@ export default function AuthPage() {
 
                                 <Button
                                     type="submit"
-                                    className="w-full cursor-pointer bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-2.5 transition-all duration-300 shadow-lg hover:shadow-xl"
+                                    disabled={isLoading}
+                                    className="w-full cursor-pointer bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-2.5 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50"
                                 >
-                                    Entrar
+                                    {isLoading ? "Entrando..." : "Entrar"}
                                 </Button>
                             </form>
                         </TabsContent>
@@ -177,6 +228,7 @@ export default function AuthPage() {
                                         type="text"
                                         placeholder="Seu nome"
                                         {...registerForm.register("name")}
+                                        disabled={isLoading}
                                         className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50 focus:border-amber-500 focus:ring-amber-500/20"
                                     />
                                     {registerForm.formState.errors.name && (
@@ -191,6 +243,7 @@ export default function AuthPage() {
                                         type="email"
                                         placeholder="seu@email.com"
                                         {...registerForm.register("email")}
+                                        disabled={isLoading}
                                         className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50 focus:border-amber-500 focus:ring-amber-500/20"
                                     />
                                     {registerForm.formState.errors.email && (
@@ -205,6 +258,7 @@ export default function AuthPage() {
                                         type="password"
                                         placeholder="••••••••"
                                         {...registerForm.register("password")}
+                                        disabled={isLoading}
                                         className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50 focus:border-amber-500 focus:ring-amber-500/20"
                                     />
                                     {registerForm.formState.errors.password && (
@@ -219,6 +273,7 @@ export default function AuthPage() {
                                         type="password"
                                         placeholder="••••••••"
                                         {...registerForm.register("confirmPassword")}
+                                        disabled={isLoading}
                                         className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50 focus:border-amber-500 focus:ring-amber-500/20"
                                     />
                                     {registerForm.formState.errors.confirmPassword && (
@@ -228,9 +283,10 @@ export default function AuthPage() {
 
                                 <Button
                                     type="submit"
-                                    className="w-full cursor-pointer bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-2.5 transition-all duration-300 shadow-lg hover:shadow-xl"
+                                    disabled={isLoading}
+                                    className="w-full cursor-pointer bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-2.5 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50"
                                 >
-                                    Criar Conta
+                                    {isLoading ? "Criando conta..." : "Criar Conta"}
                                 </Button>
                             </form>
                         </TabsContent>

@@ -1,0 +1,37 @@
+
+version: '3.9'
+
+services:
+  app:
+    container_name: desafio-jr-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/desafio_jr?schema=public
+      - BETTER_AUTH_URL=http://localhost:3000
+      # You should override this in production
+      - BETTER_AUTH_SECRET=supersecret123
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./prisma:/app/prisma
+    depends_on:
+      - db
+    restart: always
+
+  db:
+    container_name: desafio-jr-db
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=desafio_jr
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+volumes:
+  postgres_data:

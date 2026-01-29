@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useState, useEffect } from "react";
+import { useForm, UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
 import { Card, CardContent } from "@/components/ui/card";
@@ -48,7 +48,9 @@ import {
     AvatarImage,
 } from "@/components/ui/avatar";
 import { useRouter } from "next/navigation";
+import { getPets, createPet, updatePet, deletePet } from "./actions";
 import { petSchema, Pet, PetFormData } from "@/lib/validations/pet";
+import { authClient } from "@/lib/auth-client";
 
 // SVG Icons as components
 const PlusIcon = () => (
@@ -108,19 +110,138 @@ const DogIcon = () => (
 // Form schema without ID for create/edit
 const petFormSchema = petSchema.omit({ id: true });
 
-// Mock data with placeholder images
-const initialPets: Pet[] = [
-    { id: "1", name: "Rex", age: 3, type: "dog", breed: "Labrador", imageUrl: "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=400&h=400&fit=crop", ownerName: "João Silva", ownerContact: "(11) 99999-1111" },
-    { id: "2", name: "Mimi", age: 2, type: "cat", breed: "Siamês", imageUrl: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=400&h=400&fit=crop", ownerName: "Maria Santos", ownerContact: "(11) 99999-2222" },
-    { id: "3", name: "Thor", age: 5, type: "dog", breed: "Pastor Alemão", imageUrl: "https://images.unsplash.com/photo-1589941013453-ec89f33b5e95?w=400&h=400&fit=crop", ownerName: "Pedro Costa", ownerContact: "(11) 99999-3333" },
-    { id: "4", name: "Luna", age: 1, type: "cat", breed: "Persa", imageUrl: "https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=400&h=400&fit=crop", ownerName: "Ana Oliveira", ownerContact: "(11) 99999-4444" },
-    { id: "5", name: "Bob", age: 4, type: "dog", breed: "Golden Retriever", imageUrl: "https://images.unsplash.com/photo-1633722715463-d30f4f325e24?w=400&h=400&fit=crop", ownerName: "Carlos Lima", ownerContact: "(11) 99999-5555" },
-    { id: "6", name: "Mel", age: 2, type: "cat", breed: "Maine Coon", imageUrl: "https://images.unsplash.com/photo-1495360010541-f48722b34f7d?w=400&h=400&fit=crop", ownerName: "Fernanda Dias", ownerContact: "(11) 99999-6666" },
-];
+// Standalone component to avoid uncontrolled input state loss on re-renders
+const PetForm = ({
+    form,
+    onSubmit,
+    submitLabel
+}: {
+    form: UseFormReturn<PetFormData>,
+    onSubmit: (data: PetFormData) => void;
+    submitLabel: string
+}) => (
+    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <div className="space-y-2">
+            <Label htmlFor="image">Foto do Pet</Label>
+            <Input
+                id="image"
+                type="file"
+                accept="image/*"
+                {...form.register("image")}
+                className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50 cursor-pointer file:cursor-pointer file:text-amber-600 file:border-0 file:bg-transparent file:font-semibold"
+            />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+                <Label htmlFor="name">Nome do Pet</Label>
+                <Input
+                    id="name"
+                    placeholder="Ex: Rex"
+                    {...form.register("name")}
+                    className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
+                />
+                {form.formState.errors.name && (
+                    <p className="text-sm text-red-500">{form.formState.errors.name.message}</p>
+                )}
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="age">Idade (anos)</Label>
+                <Input
+                    id="age"
+                    type="number"
+                    placeholder="Ex: 3"
+                    {...form.register("age", { valueAsNumber: true })}
+                    className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
+                />
+                {form.formState.errors.age && (
+                    <p className="text-sm text-red-500">{form.formState.errors.age.message}</p>
+                )}
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="type">Tipo</Label>
+                <Select
+                    value={form.watch("type")}
+                    onValueChange={(value) => form.setValue("type", value as "cat" | "dog")}
+                >
+                    <SelectTrigger className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50 cursor-pointer">
+                        <SelectValue placeholder="Selecione o tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="dog" className="cursor-pointer">Cachorro</SelectItem>
+                        <SelectItem value="cat" className="cursor-pointer">Gato</SelectItem>
+                    </SelectContent>
+                </Select>
+                {form.formState.errors.type && (
+                    <p className="text-sm text-red-500">{form.formState.errors.type.message}</p>
+                )}
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="breed">Raça</Label>
+                <Input
+                    id="breed"
+                    placeholder="Ex: Labrador"
+                    {...form.register("breed")}
+                    className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
+                />
+                {form.formState.errors.breed && (
+                    <p className="text-sm text-red-500">{form.formState.errors.breed.message}</p>
+                )}
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="ownerName">Seu Nome</Label>
+                <Input
+                    id="ownerName"
+                    placeholder="Ex: João Silva"
+                    {...form.register("ownerName")}
+                    className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
+                />
+                {form.formState.errors.ownerName && (
+                    <p className="text-sm text-red-500">{form.formState.errors.ownerName.message}</p>
+                )}
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="ownerContact">Seu Contato</Label>
+                <Input
+                    id="ownerContact"
+                    placeholder="Ex: (11) 99999-9999"
+                    {...form.register("ownerContact")}
+                    className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
+                />
+                {form.formState.errors.ownerContact && (
+                    <p className="text-sm text-red-500">{form.formState.errors.ownerContact.message}</p>
+                )}
+            </div>
+        </div>
+
+        <Button
+            type="submit"
+            disabled={form.formState.isSubmitting}
+            className="w-full cursor-pointer bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-2.5 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+            {form.formState.isSubmitting ? (
+                <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Salvando...
+                </>
+            ) : submitLabel}
+        </Button>
+    </form>
+);
 
 export default function DashboardPage() {
     const router = useRouter();
-    const [pets, setPets] = useState<Pet[]>(initialPets);
+    const { data: session, isPending } = authClient.useSession();
+    const [pets, setPets] = useState<Pet[]>([]);
+    const [isLoadingPets, setIsLoadingPets] = useState(true);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -128,13 +249,106 @@ export default function DashboardPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [typeFilter, setTypeFilter] = useState<"all" | "dog" | "cat">("all");
 
-    const filteredPets = pets.filter((pet) => {
-        const matchesSearch =
-            pet.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            pet.ownerName.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesType = typeFilter === "all" || pet.type === typeFilter;
-        return matchesSearch && matchesType;
-    });
+    // Redirect to auth if not logged in
+    useEffect(() => {
+        if (!isPending && !session) {
+            router.push("/auth");
+        }
+    }, [session, isPending, router]);
+
+    // Fetch pets
+    const fetchPets = async () => {
+        setIsLoadingPets(true);
+        try {
+            const data = await getPets(searchTerm, typeFilter);
+            setPets(data);
+        } catch (error) {
+            console.error("Failed to load pets", error);
+        } finally {
+            setIsLoadingPets(false);
+        }
+    };
+
+    useEffect(() => {
+        if (session) {
+            fetchPets();
+        }
+    }, [session, searchTerm, typeFilter]);
+
+    const handleLogout = async () => {
+        await authClient.signOut({
+            fetchOptions: {
+                onSuccess: () => {
+                    window.location.href = "/auth";
+                },
+            },
+        });
+    };
+
+    // Replace filteredPets logic with just 'pets' since filtering handles in backend
+    // But wait, the previous code filtered client side.
+    // My getPets action handles filtering.
+    // So 'pets' state is already filtered.
+    const filteredPets = pets;
+
+    const onCreateSubmit = async (data: PetFormData) => {
+        const formData = new FormData();
+        formData.append("name", data.name);
+        formData.append("age", String(data.age));
+        formData.append("type", data.type);
+        formData.append("breed", data.breed);
+        formData.append("ownerName", data.ownerName);
+        formData.append("ownerContact", data.ownerContact);
+
+        if (data.image && data.image[0]) {
+            formData.append("image", data.image[0]);
+        }
+
+        const result = await createPet(formData);
+        if (result.success) {
+            setIsCreateOpen(false);
+            fetchPets();
+        } else {
+            alert(result.error || "Erro ao criar pet");
+        }
+    };
+
+    const onEditSubmit = async (data: PetFormData) => {
+        if (!selectedPet?.id) return;
+
+        const formData = new FormData();
+        formData.append("name", data.name);
+        formData.append("age", String(data.age));
+        formData.append("type", data.type);
+        formData.append("breed", data.breed);
+        formData.append("ownerName", data.ownerName);
+        formData.append("ownerContact", data.ownerContact);
+
+        if (data.image && data.image[0]) {
+            formData.append("image", data.image[0]);
+        }
+
+        const result = await updatePet(selectedPet.id, formData);
+        if (result.success) {
+            setIsEditOpen(false);
+            setSelectedPet(null);
+            fetchPets();
+        } else {
+            alert(result.error || "Erro ao editar pet");
+        }
+    };
+
+    const onDelete = async () => {
+        if (!selectedPet?.id) return;
+        const result = await deletePet(selectedPet.id);
+        if (result.success) {
+            setIsDeleteOpen(false);
+            setSelectedPet(null);
+            fetchPets();
+        } else {
+            alert(result.error || "Erro ao deletar pet");
+        }
+    };
 
     const form = useForm<PetFormData>({
         resolver: zodResolver(petFormSchema),
@@ -143,7 +357,6 @@ export default function DashboardPage() {
             age: 0,
             type: "dog",
             breed: "",
-            imageUrl: "",
             ownerName: "",
             ownerContact: "",
         },
@@ -155,48 +368,21 @@ export default function DashboardPage() {
             age: 0,
             type: "dog",
             breed: "",
-            imageUrl: "",
             ownerName: "",
             ownerContact: "",
         });
     };
 
-    const onCreateSubmit = (data: PetFormData) => {
-        const newPet: Pet = {
-            ...data,
-            id: Date.now().toString(),
-        };
-        setPets([newPet, ...pets]); // Add new pets to the top
-        setIsCreateOpen(false);
-        resetForm();
-    };
 
-    const onEditSubmit = (data: PetFormData) => {
-        if (!selectedPet) return;
-        const updatedPets = pets.map((pet) =>
-            pet.id === selectedPet.id ? { ...data, id: selectedPet.id } : pet
-        );
-        setPets(updatedPets);
-        setIsEditOpen(false);
-        setSelectedPet(null);
-        resetForm();
-    };
-
-    const onDelete = () => {
-        if (!selectedPet) return;
-        setPets(pets.filter((pet) => pet.id !== selectedPet.id));
-        setIsDeleteOpen(false);
-        setSelectedPet(null);
-    };
 
     const openEditModal = (pet: Pet) => {
         setSelectedPet(pet);
         form.reset({
             name: pet.name,
             age: pet.age,
-            type: pet.type,
+            type: pet.type as "cat" | "dog",
             breed: pet.breed,
-            imageUrl: pet.imageUrl || "",
+            // image is file input, hard to preset value without custom component
             ownerName: pet.ownerName,
             ownerContact: pet.ownerContact,
         });
@@ -208,113 +394,26 @@ export default function DashboardPage() {
         setIsDeleteOpen(true);
     };
 
-    const PetForm = ({ onSubmit, submitLabel }: { onSubmit: (data: PetFormData) => void; submitLabel: string }) => (
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-2">
-                <Label htmlFor="imageUrl">URL da Foto</Label>
-                <Input
-                    id="imageUrl"
-                    placeholder="https://exemplo.com/foto.jpg"
-                    {...form.register("imageUrl")}
-                    className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
-                />
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                    <Label htmlFor="name">Nome do Pet</Label>
-                    <Input
-                        id="name"
-                        placeholder="Ex: Rex"
-                        {...form.register("name")}
-                        className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
-                    />
-                    {form.formState.errors.name && (
-                        <p className="text-sm text-red-500">{form.formState.errors.name.message}</p>
-                    )}
-                </div>
 
-                <div className="space-y-2">
-                    <Label htmlFor="age">Idade (anos)</Label>
-                    <Input
-                        id="age"
-                        type="number"
-                        placeholder="Ex: 3"
-                        {...form.register("age", { valueAsNumber: true })}
-                        className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
-                    />
-                    {form.formState.errors.age && (
-                        <p className="text-sm text-red-500">{form.formState.errors.age.message}</p>
-                    )}
-                </div>
-
-                <div className="space-y-2">
-                    <Label htmlFor="type">Tipo</Label>
-                    <Select
-                        value={form.watch("type")}
-                        onValueChange={(value) => form.setValue("type", value as "cat" | "dog")}
-                    >
-                        <SelectTrigger className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50 cursor-pointer">
-                            <SelectValue placeholder="Selecione o tipo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="dog" className="cursor-pointer">Cachorro</SelectItem>
-                            <SelectItem value="cat" className="cursor-pointer">Gato</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    {form.formState.errors.type && (
-                        <p className="text-sm text-red-500">{form.formState.errors.type.message}</p>
-                    )}
-                </div>
-
-                <div className="space-y-2">
-                    <Label htmlFor="breed">Raça</Label>
-                    <Input
-                        id="breed"
-                        placeholder="Ex: Labrador"
-                        {...form.register("breed")}
-                        className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
-                    />
-                    {form.formState.errors.breed && (
-                        <p className="text-sm text-red-500">{form.formState.errors.breed.message}</p>
-                    )}
-                </div>
-
-                <div className="space-y-2">
-                    <Label htmlFor="ownerName">Seu Nome</Label>
-                    <Input
-                        id="ownerName"
-                        placeholder="Ex: João Silva"
-                        {...form.register("ownerName")}
-                        className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
-                    />
-                    {form.formState.errors.ownerName && (
-                        <p className="text-sm text-red-500">{form.formState.errors.ownerName.message}</p>
-                    )}
-                </div>
-
-                <div className="space-y-2">
-                    <Label htmlFor="ownerContact">Seu Contato</Label>
-                    <Input
-                        id="ownerContact"
-                        placeholder="Ex: (11) 99999-9999"
-                        {...form.register("ownerContact")}
-                        className="bg-white/50 dark:bg-zinc-800/50 border-amber-200 dark:border-amber-800/50"
-                    />
-                    {form.formState.errors.ownerContact && (
-                        <p className="text-sm text-red-500">{form.formState.errors.ownerContact.message}</p>
-                    )}
+    // Show loading while checking session
+    if (isPending) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center text-white animate-pulse">
+                        <PawIcon />
+                    </div>
+                    <p className="text-muted-foreground">Carregando...</p>
                 </div>
             </div>
+        );
+    }
 
-            <Button
-                type="submit"
-                className="w-full cursor-pointer bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold py-2.5 transition-all duration-300 shadow-lg hover:shadow-xl"
-            >
-                {submitLabel}
-            </Button>
-        </form>
-    );
+    // Don't render if not authenticated
+    if (!session) {
+        return null;
+    }
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950 overflow-hidden">
@@ -373,7 +472,7 @@ export default function DashboardPage() {
                             <PawIcon />
                         </div>
                         <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 dark:from-amber-400 dark:to-orange-400 bg-clip-text text-transparent">
-                            PetShop
+                            InteraTo PetShop
                         </h1>
                     </div>
 
@@ -394,7 +493,7 @@ export default function DashboardPage() {
                                         Compartilhe seu pet com a comunidade!
                                     </DialogDescription>
                                 </DialogHeader>
-                                <PetForm onSubmit={onCreateSubmit} submitLabel="Publicar" />
+                                <PetForm form={form} onSubmit={onCreateSubmit} submitLabel="Publicar" />
                             </DialogContent>
                         </Dialog>
 
@@ -402,8 +501,11 @@ export default function DashboardPage() {
                             <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" className="relative h-10 w-10 rounded-full cursor-pointer p-0">
                                     <Avatar className="h-10 w-10 border-2 border-amber-200 dark:border-amber-800 bg-amber-100 dark:bg-amber-900/30">
+                                        {session?.user?.image && (
+                                            <AvatarImage src={session.user.image} alt={session.user.name || ""} />
+                                        )}
                                         <AvatarFallback className="bg-transparent text-amber-600 dark:text-amber-400">
-                                            <UserIcon />
+                                            {session?.user?.name?.charAt(0).toUpperCase() || <UserIcon />}
                                         </AvatarFallback>
                                     </Avatar>
                                 </Button>
@@ -411,14 +513,14 @@ export default function DashboardPage() {
                             <DropdownMenuContent className="w-56" align="end" forceMount>
                                 <DropdownMenuLabel className="font-normal">
                                     <div className="flex flex-col space-y-1">
-                                        <p className="text-sm font-medium leading-none">Usuário</p>
+                                        <p className="text-sm font-medium leading-none">{session?.user?.name || "Usuário"}</p>
                                         <p className="text-xs leading-none text-muted-foreground">
-                                            usuario@exemplo.com
+                                            {session?.user?.email || ""}
                                         </p>
                                     </div>
                                 </DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/10" onClick={() => router.push("/auth")}>
+                                <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/10" onClick={handleLogout}>
                                     <div className="mr-2">
                                         <LogoutIcon />
                                     </div>
@@ -472,13 +574,18 @@ export default function DashboardPage() {
                     {filteredPets.map((pet) => (
                         <Card
                             key={pet.id}
-                            className="group overflow-hidden bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border-amber-200/50 dark:border-amber-800/30 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 p-0 gap-0"
+                            className={`group overflow-hidden bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 p-0 gap-0
+                                ${pet.userId === session?.user?.id
+                                    ? "border-amber-400 dark:border-amber-600 shadow-md ring-1 ring-amber-400/50 dark:ring-amber-600/50"
+                                    : "border-amber-200/50 dark:border-amber-800/30 hover:shadow-xl"
+                                }
+                            `}
                         >
                             {/* Pet Image */}
                             <div className="relative aspect-square overflow-hidden bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30">
-                                {pet.imageUrl ? (
+                                {pet.image ? (
                                     <Image
-                                        src={pet.imageUrl}
+                                        src={`data:image/jpeg;base64,${pet.image}`}
                                         alt={pet.name}
                                         fill
                                         className="object-cover group-hover:scale-105 transition-transform duration-300"
@@ -498,25 +605,35 @@ export default function DashboardPage() {
                                     {pet.type === "dog" ? "Cachorro" : "Gato"}
                                 </Badge>
 
+                                {/* My Pet Badge - Only for owner */}
+                                {pet.userId === session?.user?.id && (
+                                    <div className="absolute top-3 left-3 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1 z-10">
+                                        <UserIcon />
+                                        <span>Meu Pet</span>
+                                    </div>
+                                )}
+
                                 {/* Action Buttons - visible on hover (desktop) / always visible (mobile) */}
-                                <div className="absolute top-3 left-3 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
-                                    <Button
-                                        variant="secondary"
-                                        size="icon"
-                                        className="cursor-pointer w-8 h-8 bg-white/90 dark:bg-zinc-800/90 hover:bg-white dark:hover:bg-zinc-800 shadow-lg"
-                                        onClick={() => openEditModal(pet)}
-                                    >
-                                        <EditIcon />
-                                    </Button>
-                                    <Button
-                                        variant="secondary"
-                                        size="icon"
-                                        className="cursor-pointer w-8 h-8 bg-white/90 dark:bg-zinc-800/90 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600 shadow-lg"
-                                        onClick={() => openDeleteModal(pet)}
-                                    >
-                                        <TrashIcon />
-                                    </Button>
-                                </div>
+                                {pet.userId === session?.user?.id && (
+                                    <div className="absolute bottom-3 right-3 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+                                        <Button
+                                            variant="secondary"
+                                            size="icon"
+                                            className="cursor-pointer w-8 h-8 bg-white/90 dark:bg-zinc-800/90 hover:bg-white dark:hover:bg-zinc-800 shadow-lg"
+                                            onClick={() => openEditModal(pet)}
+                                        >
+                                            <EditIcon />
+                                        </Button>
+                                        <Button
+                                            variant="secondary"
+                                            size="icon"
+                                            className="cursor-pointer w-8 h-8 bg-white/90 dark:bg-zinc-800/90 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600 shadow-lg"
+                                            onClick={() => openDeleteModal(pet)}
+                                        >
+                                            <TrashIcon />
+                                        </Button>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Pet Info */}
@@ -581,7 +698,7 @@ export default function DashboardPage() {
                             Atualize as informações do seu pet.
                         </DialogDescription>
                     </DialogHeader>
-                    <PetForm onSubmit={onEditSubmit} submitLabel="Salvar Alterações" />
+                    <PetForm form={form} onSubmit={onEditSubmit} submitLabel="Salvar Alterações" />
                 </DialogContent>
             </Dialog>
 
