@@ -68,6 +68,7 @@ RUN npm install prisma@7.3.0 @prisma/config@7.3.0 dotenv@17.2.3
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 USER nextjs

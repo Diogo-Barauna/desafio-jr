@@ -10,7 +10,6 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/desafio_jr?schema=public
       - BETTER_AUTH_URL=http://localhost:3000
-      # You should override this in production
       - BETTER_AUTH_SECRET=supersecret123
     ports:
       - "3000:3000"
